@@ -1,0 +1,87 @@
+---
+title: "Thesis synthesis code"
+output:
+  html_document:
+    #code_folding: hide
+    depth: 1
+    number_sections: no
+    theme: yeti
+    toc: yes
+    toc_float: yes
+    code_download: true
+editor_options:
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+## Load packages
+
+```{r}
+library(tidyverse)
+library(R.utils) # to unzip the gzb files
+
+```
+
+## Load the data
+
+I use `Number of live births` and `Number of children fathered` form the UK biobank as measures of lifetime reproductive success (LRS) in females and males respectively. 
+
+```{r}
+female_LRS <- read_tsv("Data/Summary/2734.gwas.imputed_v3.female.tsv")
+
+male_LRS <- read_tsv("Data/Summary/2405.gwas.imputed_v3.male.tsv")
+```
+
+## Clean the GWAS SNP datasets
+
+```{r}
+female_clean <-
+  female_LRS %>% 
+  filter(low_confidence_variant == FALSE & minor_AF > 0.001) %>%
+  select(variant, beta) %>% 
+  rename(beta_female = beta)
+
+male_clean <-
+  male_LRS %>% 
+  filter(low_confidence_variant == FALSE & minor_AF > 0.001) %>% 
+  select(variant, beta) %>% 
+  rename(beta_male = beta) 
+
+
+data <-
+left_join(female_clean, male_clean, by = "variant") %>% 
+  filter(!is.na(beta_female) & !is.na(beta_male)) %>%  # remove NAs
+  arrange(beta_female) %>%
+  mutate(bin = c(rep(1:floor(n()/1000), each = 1000), 
+                 rep(floor(n()/1000) + 1, each = n() %% 1000))) %>%
+  group_by(bin) %>%
+  summarise(females = mean(beta_female), males = mean(beta_male))
+
+```
+
+## Build Figure 1.1
+
+```{r}
+
+boyle_plot <- 
+  data %>%
+  ggplot(aes(females, males)) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_point(alpha = 0.8) +
+  stat_smooth(method = "lm", formula = y ~ x + I(x^2), size = 0.6) +
+  #coord_cartesian(xlim = c(0, 0.25), ylim = c(0, 0.25)) +
+  xlab("Mean effect size on female LRS in a human population\n(number of live births)") +
+  ylab("Mean effect size on male LRS in a human population\n(number of children fathered)") + 
+  theme_bw() +
+  theme(strip.background = element_blank(),
+        strip.text = element_text(hjust=0)) + 
+  theme(text = element_text(size = 14))
+
+boyle_plot
+```
+
+**Figure 1**. fitness is omnigenic. Each point represents the mean effect size for a group of 1000 variants, ordered by association with female lifetime reproductive success
